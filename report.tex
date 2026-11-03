@@ -49,9 +49,9 @@ Linear probes and activation steering are standard tools for certifying that seq
 
 \begin{figure*}[t!]
   \centering
-  \includegraphics[width=0.91\textwidth]{fig_transformer_intervention.pdf}
+  \includegraphics[width=0.95\textwidth]{fig_transformer_intervention.pdf}
   \caption{\label{fig:transformer_intervention}
-  \textbf{Architectural schematic of our causal interventions on \texttt{Othello-GPT}.} \textbf{(a)} At the final timestep $t = T{-}1$, linear probes $W_\ell \in \mathbb{R}^{512 \times 64 \times 3}$ are trained on post-MLP residual states $\mathbf{x}_{T-1}^{\ell+1}$ (\texttt{resid\_post}). Prior work \citep{nanda2023emergent} injected a hardcoded Layer-5 target vector at \texttt{hook\_attn\_out} ($0.102$ errors). We test three causal mechanisms: (1) aligning the hook to \texttt{resid\_post} with a layer-matched contrastive flip direction $\hat{\mathbf{d}}_s^\ell \propto \mathbf{w}_{s,\text{tgt}}^\ell - \mathbf{w}_{s,\text{src}}^\ell$ (\textbf{$0.012$ errors}, $8.5\times$ reduction); (2) subtracting $-6\alpha\hat{\mathbf{w}}_s$ before $\text{LN}_{\text{final}}$ (\texttt{Mediated-Only}, \textbf{$0.158$ errors}) to isolate intermediate $\Delta\text{Attn}_k + \Delta\text{MLP}_k$ computation; and (3) adding $+6\alpha\hat{\mathbf{w}}_s$ only before $\text{LN}_{\text{final}}$ (\texttt{Direct Bypass Only}, $1.808$ errors, $\Delta P_{\text{new}} = 0$). \textbf{(b)} Spatio-temporal $(L \times T)$ causal grid \citep{li2023emergent}: a single-layer edit at $(T{-}1, \ell{=}4)$ is overwritten at $\ell \in \{5..7\}$ when causal attention heads attend to unmodified prefix tokens $0\dots T{-}2$ ($2.370$ errors), whereas sustained steering across $\ell \in \{2..7\}$ locks the counterfactual board state $B'$.}
+  \textbf{Transformer intervention architecture and component-level causal traces on Case \#101 ($T{=}17$, flipping \texttt{C4}), generated using \texttt{torchview} (\texttt{draw\_graph} + Graphviz \texttt{dot}) and ROME's \texttt{plot\_trace\_heatmap} \citep{meng2022locating, nanda2023emergent}.} \textbf{(a)} Rolled PyTorch computation graph of \texttt{OthelloGPT\_Intervened} traced automatically via \texttt{torchview.draw\_graph} (\texttt{roll=True, expand\_nested=True}), showing \texttt{CleanBlocks\_L0\_L1} ($\times 2$), \texttt{SteeredBlock\_L2\_to\_L7} ($\times 6$, comparing \texttt{PriorHook\_attn\_out} vs.\ \texttt{ContrastiveFlipHook\_resid\_post} across residual \texttt{add} nodes), \texttt{LinearProbe\_Readout}, and \texttt{SkipSubtract\_MediatedOnly} before \texttt{Unembed\_LNFinal\_WU}. \textbf{(b--d)} Real activation/intervention traces plotted with ROME's \texttt{plot\_trace\_heatmap} (\texttt{Purples} = state, \texttt{Greens} = MLP, \texttt{Reds} = Attn): \textbf{(b)} single-layer edits score $0.00$ across all layers (as \texttt{C4} flips to $0.91$ at \texttt{L4} then self-repairs to $0.02$ at \texttt{L5}), whereas spans starting at \texttt{L2--L3} and \texttt{Mediated-Only} recover newly legal moves; \textbf{(c)} $\Delta\text{MLP}_5$ ($+4.62$) and $\Delta\text{MLP}_6$ ($+27.09$ logit gain) drive flanking recomputation on \texttt{B5, C5, F7} while opposing single-layer \texttt{L4} edits ($+2.24$ self-repair pull); \textbf{(d)} $\Delta\text{Attn}_7$ ($+5.63$) consolidates the final move readout.}
 \end{figure*}
 
 \section{The Question and Why It Matters Now}
@@ -162,11 +162,11 @@ Inspecting \texttt{mech\_int/intervene.py} (lines 140--162) in \citet{nanda2023e
 I want to work on \textbf{Evaluating World Models Under Intervention}---specifically claiming and building \href{https://github.com/physicalreasoning/forward/issues/5}{\textbf{\texttt{physicalreasoning/forward} Issue \#5 (\emph{``Design an intervention test for world models''})}}, paired with the untrained-encoder diagnostic philosophy from \href{https://github.com/physicalreasoning/causal-jepa}{\texttt{causal-jepa}}. In my research at the \textbf{CausalML Lab} (modeling multi-agent failures as soft interventions on Structural Causal Models) and on \textbf{hierarchical traffic scene synthesis}, models with nearly identical observational rollout loss routinely diverge under counterfactual interventions. Concretely, I want to build a deterministic 2D rigid-body and multi-agent traffic counterfactual suite for \texttt{forward} where two world models trained to matched observational validation loss are reset to held-out states, subjected to unshown impulse or mass perturbations, and gated on their \textbf{counterfactual consistency gap} alongside mediated-vs-direct and untrained-encoder controls.
 
 \vspace{3pt}
-\noindent{\footnotesize \textbf{Reproducibility \& AI Disclosure:} Standalone code (\texttt{run\_experiment.py}, \texttt{generate\_paper\_visuals.py}, \texttt{othello\_rules.py}) and bootstrap metrics (\texttt{results.json}) reproduce all tables and figures. AI coding assistants (Antigravity / Gemini) were used to scaffold the KV-cached forward pass and TikZ/Matplotlib formatting; all experimental designs, controls, codebase audits, and interpretations were verified directly against executed benchmark outputs.}
+\noindent{\footnotesize \textbf{Reproducibility \& AI Disclosure:} Standalone code (\texttt{run\_experiment.py}, \texttt{generate\_paper\_visuals.py}, \texttt{othello\_rules.py}) and bootstrap metrics (\texttt{results.json}) reproduce all tables and figures using \texttt{torchview}, \texttt{kmeng01/rome}, and \texttt{likenneth/othello\_world}. AI coding assistants (Antigravity / Gemini) were used to scaffold the KV-cached forward pass and tool integration; all experimental designs, controls, codebase audits, and interpretations were verified directly against executed benchmark outputs.}
 
-{\small
-\setlength{\bibsep}{1.5pt}
-\begin{thebibliography}{4}
+{\footnotesize
+\setlength{\bibsep}{1.2pt}
+\begin{thebibliography}{5}
 \expandafter\ifx\csname natexlab\endcsname\relax\def\natexlab#1{#1}\fi
 
 \bibitem[{Belinkov(2022)}]{belinkov2022probing}
@@ -183,6 +183,11 @@ Kenneth Li, Aspen~K. Hopkins, David Bau, Fernanda Vi{\'e}gas, Hanspeter Pfister,
 B.~Lin, Andrew Lee, Martin Wattenberg, and Neel Nanda. 2024.
 \newblock {FLoT}: Feature lookup in Othello-GPT via MLP projections.
 \newblock \emph{arXiv preprint}.
+
+\bibitem[{Meng et~al.(2022)Meng, Bau, Andonian, and Belinkov}]{meng2022locating}
+Kevin Meng, David Bau, Alex Andonian, and Yonatan Belinkov. 2022.
+\newblock Locating and editing factual associations in {GPT}.
+\newblock In \emph{Advances in Neural Information Processing Systems (NeurIPS)}.
 
 \bibitem[{Nanda et~al.(2023)Nanda, Lee, and Wattenberg}]{nanda2023emergent}
 Neel Nanda, Andrew Lee, and Martin Wattenberg. 2023.
