@@ -1,0 +1,114 @@
+\documentclass[9pt,letterpaper]{extarticle}
+\usepackage[margin=0.5in,top=0.45in,bottom=0.45in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{caption}
+\usepackage{microtype}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=blue!65!black
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{2.5pt}
+\setlist[itemize]{leftmargin=1.2em, itemsep=1pt, topsep=1pt}
+\setlist[enumerate]{leftmargin=1.3em, itemsep=1pt, topsep=1pt}
+
+\titlespacing*{\section}{0pt}{4.5pt}{1.5pt}
+\titleformat{\section}{\normalfont\normalsize\bfseries}{\thesection.}{0.4em}{}
+
+\captionsetup{font=footnotesize, labelfont=bf, skip=2pt}
+
+\begin{document}
+
+\begin{center}
+    {\large \textbf{Causal Check on Othello-GPT: Separating Downstream World-Model Computation from Direct Readout Bias}}\\[2pt]
+    {\footnotesize \textbf{Rohan Gupta} (\texttt{gupt1156@purdue.edu}) $\cdot$ Purdue University $\cdot$ Physical Reasoning Research Take-Home (Direction 3: Causal Check)}
+\end{center}
+\vspace{-5pt}
+\hrule
+\vspace{2pt}
+
+\section{The Question and Why It Matters for World Models Now}
+A central claim in world-model interpretability is that self-supervised sequence models learn linear internal representations of world state that causally drive next-step predictions. In \textbf{Othello-GPT}, Nanda, Lee \& Wattenberg (2023) showed that probing residual activations in player-relative coordinates (\texttt{\{Empty, Yours, Mine\}}) yields $>99\%$ linear probe accuracy by Layer 4, and that adding probe vectors across layers steers the model into predicting legal moves for a counterfactual board $B'$. However, two questions remain open whenever linear activation steering alters a transformer's output:
+\begin{enumerate}
+    \item \textbf{Mediated computation vs.\ direct readout bias:} Because a transformer's residual stream forms an identity skip connection to the final unembedding ($\mathbf{x}_L = \mathbf{x}_\ell + \sum_{k=\ell}^{L-1} f_k(\mathbf{x}_k)$), injecting a steering vector $\boldsymbol{\delta}_\ell$ across layers $\ell \in \{2,\dots,7\}$ also adds $\sum_\ell \boldsymbol{\delta}_\ell$ directly into the final readout $W_U$. Does steering succeed because intermediate Attention/MLP layers recompute Othello capture rules over the edited board state, or because $\boldsymbol{\delta}$ acts as a direct linear logit bias at $W_U$?
+    \item \textbf{Single-layer decodability vs.\ causal control:} If a linear probe decodes the board state with $99.4\%$ accuracy at Layer 5, does intervening at Layer 5 alone flip the model's move predictions, or do downstream layers overwrite single-layer state edits?
+\end{enumerate}
+\textbf{Why it matters now:} Linear probe $R^2$ and activation steering are widely used to certify that video, robotics, and market models have learned actionable world states. If a representation is $99\%$ decodable at layer $\ell$ yet causally overwritten unless edited across a specific circuit span—or if steering metrics are confounded by direct skip-connection bias—standard probe diagnostics will overstate whether a world model can be planned with under intervention.
+
+\section{Method: Models, Data, Metrics, and Controls}
+\begin{itemize}
+    \item \textbf{Model \& Data:} We audit the pretrained 8-layer, 8-head, $d_{\text{model}}=512$ \texttt{Othello-GPT} (\texttt{synthetic\_model.pth}, \texttt{LNPre}) and the 8 relative linear probes $\texttt{resid\_\{0..7\}\_linear.pth} \in \mathbb{R}^{512 \times 8 \times 8 \times 3}$ from \texttt{ajyl/mech\_int\_othelloGPT}. Probing is evaluated on $3{,}584$ mid-game states ($t \in [5,50]$) across 80 held-out synthetic games. Causal interventions are evaluated on the complete official benchmark (\texttt{intervention\_benchmark.pkl}, $N = 1{,}001$ partial games) from Li et al.\ (2023) and Nanda et al.\ (2023), where flipping a single occupied square $s=(r,c)$ ($\texttt{Yours} \leftrightarrow \texttt{Mine}$) changes the ground-truth legal move set from $M(B)$ to $M(B')$.
+    \item \textbf{Metrics (1,000-sample bootstrap 95\% CIs across games):} (1) \textbf{Counterfactual Move Error} (Nanda et al.\ Table 2 metric, lower is better): for $K = |M(B')|$ and top-$K$ model predictions $\hat{M}_K$, $\text{Error}(B') = |\hat{M}_K \setminus M(B')| + |M(B') \setminus \hat{M}_K|$. (2) \textbf{Newly-Legal Probability Gain ($\Delta P_{\text{new}}$):} change in probability mass assigned to newly legal moves $M_{\text{new}} = M(B') \setminus M(B)$, $\Delta P_{\text{new}} = \sum_{m \in M_{\text{new}}} [P(m \mid \text{intervened}) - P(m \mid \text{clean})]$.
+    \item \textbf{Controls that rule out the boring explanations:}
+    \begin{enumerate}
+        \item \textbf{Direct-Logit Bypass Control vs.\ Skip-Subtracted (\texttt{Mediated-Only}):} To test whether $\boldsymbol{\delta}$ merely biases $W_U$ via the skip connection, \texttt{Direct-Logit Bypass} leaves hidden layers $\ell \in \{0,\dots,7\}$ clean and adds $\sum_{\ell=2}^7 \boldsymbol{\delta}_\ell$ \emph{only} to the final residual stream before $\texttt{ln\_final} + W_U$. Conversely, \texttt{Mediated-Only} injects $+\boldsymbol{\delta}_\ell$ at layers $\ell \in \{2,\dots,7\}$ so downstream layers compute over the edited state, then \emph{subtracts} $-\sum_{\ell=2}^7 \boldsymbol{\delta}_\ell$ before $\texttt{ln\_final} + W_U$ so the direct skip path is zero.
+        \item \textbf{Untrained-Encoder Probe Control:} Fit a ridge linear probe on a randomly initialized 8-layer GPT of identical architecture and variance ($200$ training games) and steer \texttt{Othello-GPT} along the resulting probe directions.
+        \item \textbf{Wrong-Square Spatial Control ($s' \neq s$):} Steer using the trained probe vector of a non-intervened interior square $s' \neq s$ at the same norm $\alpha = 2.3$.
+    \end{enumerate}
+\end{itemize}
+
+\section{First Experiment and Results}
+\vspace{-2pt}
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.96\textwidth]{fig_causal_check.png}
+    \caption{\textbf{Left (A):} Counterfactual move error across intervention scale $\alpha$ ($N=1{,}001$, shaded 95\% bootstrap CIs). Subtracting the direct skip connection (\texttt{Mediated-Only}, blue) preserves $97.9\%$ of the error reduction, while adding the vector only before $W_U$ (\texttt{Direct-Logit Bypass}, red) fails to discover newly legal moves. Fixing the hook site and using a contrastive flip vector ($\star$, green) cuts error from $0.102$ to $0.012$. \textbf{Right (B):} Layer-wise 3-way probe accuracy (green/gray, right axis) vs.\ single-layer edit error (red) and cumulative span $[\ell..7]$ error (blue).}
+\end{figure}
+\vspace{-6pt}
+
+\begin{table}[h!]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.05}
+\begin{tabularx}{\textwidth}{@{}l cc X@{}}
+\toprule
+\textbf{Experimental Arm ($N = 1{,}001$ boards, $\alpha = 2.3$)} & \textbf{Error on $B'$ $\downarrow$ (95\% CI)} & \textbf{$\Delta P_{\text{new}}$ $\uparrow$ (95\% CI)} & \textbf{Finding / Role} \\
+\midrule
+0. Null Baseline ($\alpha = 0$) & $2.723\ [2.645, 2.799]$ & $+0.000\ [+0.000, +0.000]$ & Exact match to Nanda et al.\ Table 2 ($2.723$) \\
+1. Full Multi-Layer Steering (Nanda et al.\ \texttt{intervene.py}) & $0.102\ [0.072, 0.136]$ & $+0.072\ [+0.066, +0.077]$ & Exact match to Nanda et al.\ Table 2 ($0.10$) \\
+2. \textbf{Mediated-Only (Skip-Subtracted before $W_U$)} & $\mathbf{0.158}\ [0.122, 0.198]$ & $\mathbf{+0.037}\ [+0.033, +0.041]$ & \textbf{97.9\% of error drop survives removing skip path} \\
+3. \textbf{Direct-Logit Bypass Control (Only before $W_U$)} & $1.808\ [1.730, 1.884]$ & $\mathbf{+0.000}\ [+0.000, +0.000]$ & \textbf{Zero probability gain on newly legal moves} \\
+4. Untrained-Encoder Probe Control & $2.661\ [2.581, 2.743]$ & $+0.000\ [+0.000, +0.000]$ & Random-init probe directions have no causal effect \\
+5. Wrong-Square Spatial Control ($s' \neq s$) & $3.435\ [3.337, 3.530]$ & $+0.001\ [+0.001, +0.002]$ & Steering an unrelated square degrades $M(B')$ \\
+\midrule
+6. Code Audit A: Layer-Matched $\texttt{probes}[\ell]$ @ \texttt{attn\_out} & $0.150\ [0.116, 0.188]$ & $+0.071\ [+0.065, +0.076]$ & Replaces hardcoded \texttt{probes[5]} in \texttt{intervene.py} \\
+7. Code Audit B: Layer-Matched $\texttt{probes}[\ell]$ @ \texttt{resid\_post} & $0.076\ [0.054, 0.102]$ & $+0.075\ [+0.069, +0.081]$ & Aligns intervention hook with probe training site \\
+8. \textbf{Code Audit C: Contrastive Flip @ \texttt{resid\_post}} & $\mathbf{0.012}\ [0.004, 0.026]$ & $\mathbf{+0.079}\ [+0.073, +0.085]$ & \textbf{$8.5\times$ error reduction ($12$ errors / $1{,}001$ boards)} \\
+\bottomrule
+\end{tabularx}
+\caption{Causal decomposition and codebase audit on the official $1{,}001$-board Othello-GPT benchmark.}
+\end{table}
+\vspace{-4pt}
+
+\begin{itemize}
+    \item \textbf{Result 1 — Downstream computation, not direct logit bias, drives counterfactual steering (Fig.\ 1A, Table 1):} Removing the direct skip-connection vector before $\texttt{ln\_final} + W_U$ (\texttt{Mediated-Only}) reduces counterfactual error from $2.723$ to $0.158$ ($97.9\%$ of the full reduction). Conversely, injecting the same accumulated vector only before $W_U$ (\texttt{Direct-Logit Bypass}) produces $\Delta P_{\text{new}} = +0.000$: direct unembedding dot products slightly suppress invalidated moves ($1.808$ vs.\ $2.723$) but cannot identify newly legal captures without intermediate Attention/MLP layers.
+    \item \textbf{Result 2 — High single-layer decodability $\neq$ single-layer causal control (Fig.\ 1B):} Trained 3-way probe accuracy reaches $99.0\%$ at \texttt{L4} and $99.5\%$ at \texttt{L6} (vs.\ $63.4\% \to 62.6\%$ on the untrained encoder, which decays monotonically as random layers scramble token history). Yet editing a single layer alone never pushes error below $2.188$ (\texttt{L5}), because downstream layers re-read un-edited board features from earlier residual streams and overwrite the single-layer edit. Cumulative span edits $[\ell..7]$ show that causal consumption peaks at \textbf{Span \texttt{[L3..L7]} ($0.072$ error)} and collapses if started at \textbf{\texttt{L5} ($1.345$)} or \textbf{\texttt{L6} ($2.268$)}: by the layer where probe accuracy peaks (\texttt{L6}), the capture-detection circuits in Layers 3–4 have already fired on the un-intervened board.
+    \item \textbf{Result 3 — Auditing \texttt{ajyl/mech\_int\_othelloGPT} cuts steering error by $8.5\times$ ($0.102 \to 0.012$):} Inspecting \texttt{mech\_int/intervene.py} (lines 140–162) revealed three discrepancies between Nanda et al.'s paper and code: (i) the script constructs per-layer hooks \texttt{hook\_fns[0..7]} but hardcodes \texttt{hook\_fns[5]} (Layer 5's probe) into all layers $2..7$; (ii) it hooks \texttt{hook\_attn\_out} (pre-MLP) using probes trained on \texttt{resid\_post} (post-MLP); and (iii) it adds only the target class vector $\hat{\mathbf{w}}_{\text{target}}$ without subtracting the old state $\hat{\mathbf{w}}_{\text{source}}$. Hooking \texttt{resid\_post} with layer-matched probes drops error to $0.076$, and steering along the \textbf{contrastive flip direction} $\hat{\mathbf{d}}_s^\ell \propto \mathbf{w}_{s,\text{target}}^\ell - \mathbf{w}_{s,\text{source}}^\ell$ reduces error from $\mathbf{0.102}$ to $\mathbf{0.012\ [0.004, 0.026]}$—only 12 errors across all $1{,}001$ boards.
+\end{itemize}
+
+\section{What Result Would Change My Conclusion, and What I Would Run Next Week}
+\begin{itemize}
+    \item \textbf{Pre-Registered Falsification Criteria:} (1) Our conclusion that steering is driven by mediated computation rather than readout bias would be falsified if freezing hidden Attention/MLP outputs to clean activations while applying $\boldsymbol{\delta}$ before $W_U$ recovered $>50\%$ of the error reduction or yielded $\Delta P_{\text{new}} > +0.02$ (it yields $33.6\%$ error reduction and $+0.000$ $\Delta P_{\text{new}}$). (2) Our conclusion that single-layer edits fail due to downstream self-repair from earlier residual streams would be falsified if projecting out the old tile subspace at Layer 3 \emph{and} blocking Layers 4–6 attention heads from attending to the historical move token where $s$ was played still failed to reduce single-layer edit error below $0.50$.
+    \item \textbf{Next Week's Plan:} (1) \textbf{Path-patching Attention vs.\ MLP self-repair:} Decompose the gap between \texttt{Single-Layer L3} ($2.535$) and \texttt{Span [L3..L7]} ($0.072$) by patching individual MLP blocks vs.\ attention heads in Layers 4–6 to separate MLP local-pattern heuristics (Lin et al.\ 2024) from attention re-reading. (2) \textbf{Endgame \texttt{MoveFirst} regime ($t > 30$):} Stratify the $0.012$ contrastive intervention by game turn $t$ and compare discriminative probe weights against difference-in-means vectors ($\boldsymbol{\mu}_{\text{Mine}} - \boldsymbol{\mu}_{\text{Yours}}$) in late-game states where Nanda et al.\ found moves are computed before full board state.
+\end{itemize}
+
+\section{What I Want to Work On With Physical Reasoning}
+I want to work on \textbf{Evaluating World Models Under Intervention}—specifically claiming and building \href{https://github.com/physicalreasoning/forward/issues/5}{\textbf{\texttt{physicalreasoning/forward} Issue \#5 (\emph{``Design an intervention test for world models''})}}, and combining it with the probing controls from \href{https://github.com/physicalreasoning/causal-jepa}{\texttt{causal-jepa}}. In my research at the \textbf{CausalML Lab} (modeling multi-agent failures as soft interventions on Structural Causal Models) and on \textbf{hierarchical traffic scene synthesis}, models with nearly identical observational validation loss routinely diverge under counterfactual interventions. Concretely, I want to build a lightweight, deterministic 2D rigid-body/traffic counterfactual benchmark for \texttt{forward} where two small world models trained to matched observational validation loss are reset to held-out states, subjected to unshown impulse/mass interventions, and scored under a pre-registered gate on the \textbf{counterfactual consistency gap} alongside direct-vs-mediated and untrained-encoder controls.
+
+\vspace{2pt}
+\hrule
+\vspace{2pt}
+{\scriptsize \textbf{Code \& Reproducibility:} Standalone script (\texttt{run\_experiment.py}), Othello simulator (\texttt{othello\_rules.py}), and raw bootstrap outputs (\texttt{results.json}) reproduce all numbers and figures in $\sim 3$ minutes on CPU or $<20$s on GPU. \textbf{AI Tools Disclosure:} AI coding assistants (Antigravity / Gemini) were used to scaffold the pure-PyTorch \texttt{LNPre} forward pass, KV-cached batching, and Matplotlib layout; all experimental design decisions, control formulations, codebase audits of \texttt{ajyl/mech\_int\_othelloGPT}, and interpretations were verified directly against the executed benchmark outputs.}
+
+\end{document}

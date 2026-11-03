@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.aux
+*.log
+*.out
+data/synthetic_model.pth
+othello_board.py
