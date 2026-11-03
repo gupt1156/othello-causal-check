@@ -39,6 +39,13 @@ This matters for world models now because linear probe $R^2$ and activation stee
 
 ## 3. First Experiment and Results
 
+### Figure 1: Architectural & Spatio-Temporal Causal Intervention Schematic (LaTeX `TikZ`)
+![Transformer Intervention Architecture](fig_transformer_intervention.png)
+
+### Figure 2: Board-Level Causal Visualization on Canonical Case #101 (`othello_world` `plot_probs` & `plot_mentals`)
+![Board-Level Intervention Visualization](fig_board_intervention.png)
+
+### Figure 3: Quantitative Causal Decomposition Across $N = 1{,}001$ Benchmark Boards
 ![Causal Check Diagnostic Plot](fig_causal_check.png)
 
 ### Table 1: Causal Path Decomposition & Code Audit on Official Benchmark ($N = 1{,}001$)
@@ -97,9 +104,17 @@ In my current research at the **CausalML Lab** (modeling multi-agent failures as
 ## Reproducing Everything
 
 ```bash
-# Runs probe evaluation, untrained control fitting, and all 25 causal intervention arms
-# across N = 1,001 boards in ~3 minutes on CPU (or <20s on GPU), writing results.json & fig_causal_check.png
+# 1. Run probe evaluation, untrained control fitting, and all 25 causal intervention arms
+#    across N = 1,001 boards, writing results.json & fig_causal_check.png
 python run_experiment.py
+
+# 2. Generate board-level probability & probe belief heatmaps (Case #101) using official
+#    likenneth/othello_world tools (plot_probs, plot_mentals, OthelloBoardState)
+python generate_paper_visuals.py
+
+# 3. Compile LaTeX TikZ transformer intervention diagram and ACL2023 two-column paper (report.pdf)
+pdflatex fig_transformer_intervention.tex
+pdflatex report.tex && pdflatex report.tex
 ```
 
 *AI tools disclosure:* AI coding assistants (Antigravity / Gemini) were used to scaffold the pure-PyTorch `LNPre` forward-pass runner, KV-cached batching, and Matplotlib plotting; all experimental design decisions, control formulations, codebase audits of `ajyl/mech_int_othelloGPT`, and interpretations were verified directly against the executed benchmark outputs.
