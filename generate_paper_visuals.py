@@ -1,18 +1,20 @@
 """
 generate_paper_visuals.py — Generates paper figures using established open-source academic tools:
-1. `torchview` (`mert-kurttutan/torchview`: `draw_graph`) + `graphviz` (`dot`) to automatically trace
-   and render the PyTorch computation graph of our intervened `Othello-GPT` model (`fig_transformer_intervention.pdf`).
+1. `negrinho/sane_tikz` (`examples/transformer.py`, Negrinho 2020) to programmatically generate the
+   canonical Vaswani et al. (2017) "Attention Is All You Need" / GPT Decoder-Only Transformer block
+   diagram with our probe-guided intervention hooks (`fig_transformer_intervention.pdf`).
 2. `kmeng01/rome` (`experiments/causal_trace.py`: `plot_trace_heatmap` in Purples/Greens/Reds, Meng et al. NeurIPS 2022)
    and `Othello_GPT_Circuits.ipynb` (Nanda 2023) to plot real causal traces across State (`resid_post`), `MLP`, and `Attn`.
 3. `likenneth/othello_world` (`data/__init__.py`: `plot_probs`, `plot_mentals`, `OthelloBoardState`, Li et al. ICLR 2023)
    to render board-level next-move probability heatmaps and layer-wise probe belief states (`fig_board_intervention.pdf`).
 """
 
+import math
 import os
 import pickle
+import subprocess
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import seaborn as sns
 import matplotlib
@@ -20,7 +22,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from matplotlib.patches import Rectangle, Circle
-from torchview import draw_graph
+import sane_tikz.core as stz
+import sane_tikz.formatting as fmt
 
 from othello_board import OthelloBoardState, permit, permit_reverse
 from run_experiment import (
@@ -348,137 +351,304 @@ def generate_board_intervention_figure(sd, probes, dataset):
 
 
 # ==============================================================================
-# PyTorch Module Wrapper for Automated Computation Graph Tracing via `torchview`
+# `negrinho/sane_tikz` (`examples/transformer.py`) Decoder-Only Othello-GPT Diagram
 # ==============================================================================
-class LNPre_Final(nn.Module):
-    def forward(self, x):
-        return (x - x.mean(-1, keepdim=True)) / (x.var(-1, unbiased=False, keepdim=True) + 1e-5).sqrt()
+def render_sane_tikz_transformer_diagram(out_png_path: str) -> np.ndarray:
+    """
+    Uses `negrinho/sane_tikz` (`examples/transformer.py`) to programmatically generate
+    the canonical Vaswani et al. (2017) "Attention Is All You Need" / GPT Decoder-Only
+    Transformer diagram with our 3 intervention hooks on Othello-GPT.
+    """
+    width = 2.5
+    callout_width = 5.8
+    line_width = 3.0 * fmt.standard_line_width
+    rectangle_roundness = 0.1
+    connector_roundness = 0.2
+    to_add_norm_spacing = 0.15
+    per_line_height = 0.40
+    plus_circle_radius = 0.20
+    sine_circle_radius = 2.0 * plus_circle_radius
+    spacing_between_text_and_arrows = 0.05
+    arrow_length = 0.55
+    residual_spacing = 1.90
+    trident_alpha = 0.75
+    trident_spacing = 0.40
+    bbox_spacing = 0.42
+    bbox_roundness = 0.3
 
+    name2color = {
+        "emb_color": (252, 224, 225),
+        "multi_head_attention_color": (252, 226, 187),
+        "add_norm_color": (242, 243, 193),
+        "ff_color": (194, 232, 247),
+        "softmax_color": (203, 231, 207),
+        "linear_color": (220, 223, 240),
+        "gray_bbox_color": (243, 243, 244),
+        "probe_color": (235, 222, 240),
+    }
 
-class CausalSelfAttn_LN1(nn.Module):
-    def __init__(self, d_model=512):
-        super().__init__()
-        self.W_QKV = nn.Linear(d_model, 3 * d_model)
-        self.W_O = nn.Linear(d_model, d_model)
+    s_arr = fmt.combine_tikz_strs([fmt.line_width(line_width), fmt.arrow_heads("end")])
+    s_arr_both = fmt.combine_tikz_strs([fmt.line_width(line_width), fmt.arrow_heads("both")])
+    s_arr_dashed = fmt.combine_tikz_strs([fmt.line_width(line_width), fmt.arrow_heads("end"), fmt.line_style("dashed")])
+    s_lw = fmt.combine_tikz_strs([fmt.line_width(line_width)])
+    s_con = fmt.combine_tikz_strs([
+        fmt.arrow_heads("end"),
+        fmt.line_width(line_width),
+        fmt.rounded_corners(connector_roundness),
+    ])
+    s_bbox = fmt.combine_tikz_strs([
+        fmt.fill_color("gray_bbox_color"),
+        fmt.line_width(line_width),
+        fmt.rounded_corners(bbox_roundness),
+    ])
 
-    def forward(self, x):
-        q, k, v = self.W_QKV(x).chunk(3, dim=-1)
-        return self.W_O(q + k + v)
+    def trident_coords(e):
+        top_left_cs, bottom_right_cs = stz.bbox(e)
+        center_cs = stz.bottom_center_coords(top_left_cs, bottom_right_cs)
+        left_cs = stz.translate_coords_horizontally(center_cs, -trident_alpha * width / 2.0)
+        right_cs = stz.translate_coords_horizontally(center_cs, trident_alpha * width / 2.0)
+        cs_lst = [left_cs, center_cs, right_cs]
+        translated_cs_lst = [
+            stz.translate_coords_vertically(cs, -trident_spacing) for cs in cs_lst
+        ]
+        return cs_lst, translated_cs_lst
 
+    def rectangle(height, color_name, w=width, dashed=False):
+        styles = [
+            fmt.line_width(line_width),
+            fmt.fill_color(color_name),
+            fmt.rounded_corners(rectangle_roundness),
+        ]
+        if dashed:
+            styles.append(fmt.line_style("dashed"))
+        s_fmt = fmt.combine_tikz_strs(styles)
+        return stz.rectangle_from_width_and_height([0, 0], height, w, s_fmt)
 
-class MLP_GeLU_LN2(nn.Module):
-    def __init__(self, d_model=512, d_mlp=2048):
-        super().__init__()
-        self.W_in = nn.Linear(d_model, d_mlp)
-        self.gelu = nn.GELU()
-        self.W_out = nn.Linear(d_mlp, d_model)
+    def rectangle_with_text(color_name, s_lst, w=width, dashed=False, line_h=per_line_height, pad=0.16, font_cmd=""):
+        height = pad + line_h * len(s_lst)
+        s_width = "align=center"
+        if font_cmd:
+            s_width += ", font=" + font_cmd
+        r = rectangle(height, color_name, w=w, dashed=dashed)
+        cs = stz.center_coords(r)
+        s = " \\\\ ".join(s_lst)
+        t = stz.latex(cs, s, s_width)
+        return [r, t]
 
-    def forward(self, x):
-        return self.W_out(self.gelu(self.W_in(x)))
+    def rectangle_with_add_norm(color_name, s_lst):
+        r1 = rectangle_with_text("add_norm_color", ["Add \\& Norm"])
+        r2 = rectangle_with_text(color_name, s_lst)
+        top_left_cs, bottom_right_cs = stz.bbox(r2)
+        cs = stz.translate_coords_vertically(
+            stz.top_center_coords(top_left_cs, bottom_right_cs),
+            to_add_norm_spacing,
+        )
+        stz.translate_bbox_bottom_center_to_coords(r1, cs)
+        c = connect_straight_vertical(r2, r1)
+        return [r1, r2, c]
 
+    def connect_straight_vertical(e_from, e_to):
+        from_cs = stz.coords_from_bbox_with_fn(e_from, stz.top_center_coords)
+        to_cs = stz.coords_from_bbox_with_fn(e_to, stz.bottom_center_coords)
+        return stz.line_segment(from_cs, to_cs, s_lw)
 
-class PriorHook_attn_out(nn.Module):
-    def __init__(self, d_model=512):
-        super().__init__()
-        self.delta_L5 = nn.Parameter(torch.zeros(1, 1, d_model))
+    def connect_straight_horizontal(e_from, e_to):
+        from_cs = stz.coords_from_bbox_with_fn(e_from, stz.right_center_coords)
+        to_cs = stz.coords_from_bbox_with_fn(e_to, stz.left_center_coords)
+        return stz.line_segment(from_cs, to_cs, s_lw)
 
-    def forward(self, attn_out):
-        return attn_out + self.delta_L5
+    def connect_right_to_left_with_arrow(e_right, e_left, style=s_arr):
+        from_cs = stz.coords_from_bbox_with_fn(e_right, stz.left_center_coords)
+        to_cs = stz.coords_from_bbox_with_fn(e_left, stz.right_center_coords)
+        return stz.line_segment(from_cs, to_cs, style)
 
+    def connect_straight_with_arrow(e_from, e_to):
+        from_cs = stz.coords_from_bbox_with_fn(e_from, stz.top_center_coords)
+        to_cs = stz.coords_from_bbox_with_fn(e_to, stz.bottom_center_coords)
+        return stz.line_segment(from_cs, to_cs, s_arr)
 
-class ContrastiveFlipHook_resid_post(nn.Module):
-    def __init__(self, d_model=512):
-        super().__init__()
-        self.delta_flip = nn.Parameter(torch.zeros(1, 1, d_model))
+    def connect_residual(e_with_addnorm, bottom_spacing, side_spacing):
+        from_cs = stz.coords_from_bbox_with_fn(e_with_addnorm, stz.bottom_center_coords)
+        from_cs = stz.translate_coords_vertically(from_cs, -bottom_spacing)
+        if side_spacing < 0:
+            to_cs = stz.coords_from_bbox_with_fn(e_with_addnorm[0], stz.left_center_coords)
+        else:
+            to_cs = stz.coords_from_bbox_with_fn(e_with_addnorm[0], stz.right_center_coords)
+        cs = stz.translate_coords_horizontally(from_cs, side_spacing)
+        return stz.open_path([from_cs, cs, [cs[0], to_cs[1]], to_cs], s_con)
 
-    def forward(self, resid_post):
-        return resid_post + self.delta_flip
+    def circle_with_sine():
+        r = sine_circle_radius
+        alpha = 0.6 * r
+        delta = 0.02
+        circle = stz.circle([0, 0], r, s_lw)
+        k = 2.0 * math.pi
+        xs = np.linspace(0.0, k)
+        ys = np.sin(xs)
+        cs_lst = []
+        for x, y in zip(xs, ys):
+            cs_lst.append([
+                stz.axis_value_to_canvas_value(-r + delta, 0.0, r - delta, k, x),
+                stz.axis_value_to_canvas_value(-r + delta, -r / alpha, r - delta, r / alpha, y),
+            ])
+        sine = stz.open_path(cs_lst, s_lw)
+        return [circle, sine]
 
+    def circle_with_plus():
+        r = plus_circle_radius
+        circle = stz.circle([0, 0], r, fmt.combine_tikz_strs([fmt.line_width(line_width), fmt.fill_color("white")]))
+        plus = [
+            stz.centered_horizontal_line_segment([0, 0], 1.5 * r, s_lw),
+            stz.centered_vertical_line_segment([0, 0], 1.5 * r, s_lw),
+        ]
+        return [circle, plus]
 
-class LinearProbe_Readout(nn.Module):
-    def __init__(self, d_model=512):
-        super().__init__()
-        self.W_probe = nn.Linear(d_model, 64 * 3, bias=False)
+    def arrow_in(e):
+        to_cs = stz.coords_from_bbox_with_fn(e, stz.bottom_center_coords)
+        from_cs = stz.translate_coords_vertically(to_cs, -arrow_length)
+        return stz.line_segment(from_cs, to_cs, s_arr)
 
-    def forward(self, resid_post):
-        return self.W_probe(resid_post)
+    def arrow_out(e):
+        from_cs = stz.coords_from_bbox_with_fn(e, stz.top_center_coords)
+        to_cs = stz.translate_coords_vertically(from_cs, arrow_length)
+        return stz.line_segment(from_cs, to_cs, s_arr)
 
+    ier = rectangle_with_text("emb_color", ["Token", "Embedding"])
+    cl = circle_with_plus()
+    sl = circle_with_sine()
+    mmha_an = rectangle_with_add_norm("multi_head_attention_color", ["Masked", "Multi-Head", "Attention"])
+    c_attn_hook = circle_with_plus()
+    ff_an = rectangle_with_add_norm("ff_color", ["Feed", "Forward"])
+    c_resid_hook = circle_with_plus()
+    c_skip_hook = circle_with_plus()
+    linear = rectangle_with_text("linear_color", ["Linear ($W_U$)"])
+    softmax = rectangle_with_text("softmax_color", ["Softmax"])
 
-class SkipSubtract_MediatedOnly(nn.Module):
-    def __init__(self, d_model=512):
-        super().__init__()
-        self.six_delta = nn.Parameter(torch.zeros(1, 1, d_model))
+    stz.place_above_and_align_to_the_center(cl, ier, 0.38)
+    stz.place_to_the_left_and_align_to_the_center(sl, cl, 0.30)
+    stz.place_above_and_align_to_the_center(mmha_an, cl, 1.25)
+    stz.place_above_and_align_to_the_center(c_attn_hook, mmha_an, 0.45)
+    stz.place_above_and_align_to_the_center(ff_an, c_attn_hook, 0.85)
+    stz.place_above_and_align_to_the_center(c_resid_hook, ff_an, 0.45)
+    stz.place_above_and_align_to_the_center(c_skip_hook, c_resid_hook, 1.55)
+    stz.place_above_and_align_to_the_center(linear, c_skip_hook, 0.65)
+    stz.place_above_and_align_to_the_center(softmax, linear, 0.45)
 
-    def forward(self, x_final):
-        return x_final - self.six_delta
+    res_mha = connect_residual(mmha_an, 0.55, -residual_spacing)
+    res_ff = connect_residual(ff_an, 0.45, -residual_spacing)
 
+    b = stz.bbox([c_resid_hook, mmha_an, res_mha, res_ff])
+    bb1 = stz.rectangle_from_additive_resizing(b[0], b[1], bbox_spacing, bbox_spacing, s_bbox)
 
-class TokenPlusPosEmbed(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.W_E = nn.Embedding(61, 512)
-        self.W_pos = nn.Embedding(59, 512)
+    callout_gap = 0.95
+    box_hook1 = rectangle_with_text(
+        "multi_head_attention_color",
+        [
+            "\\textbf{1. Prior Hook (\\texttt{attn\\_out})}",
+            "$+\\alpha\\,\\hat{\\mathbf{w}}_{s,\\text{tgt}}^{(5)}$ ($0.102$ err)",
+        ],
+        w=callout_width, dashed=True, line_h=0.42, pad=0.22, font_cmd="\\small",
+    )
+    box_hook2 = rectangle_with_text(
+        "probe_color",
+        [
+            "\\textbf{2. Contrastive Flip (\\texttt{resid\\_post})}",
+            "Probe $W_\\ell$: $+\\alpha\\,(\\mathbf{w}_{s,\\text{tgt}}^\\ell - \\mathbf{w}_{s,\\text{src}}^\\ell)/\\|\\cdot\\|_2$",
+            "\\textbf{0.012 err} ($8.5\\times\\!\\downarrow$, $99.6\\%$ flip)",
+        ],
+        w=callout_width, dashed=False, line_h=0.42, pad=0.24, font_cmd="\\small",
+    )
+    box_hook3 = rectangle_with_text(
+        "ff_color",
+        [
+            "\\textbf{3. Skip Decomposition ($\\mathbf{h}_8$)}",
+            "Mediated $-6\\alpha\\hat{\\mathbf{w}}_s$: \\textbf{0.158 err} ($97.9\\%$)",
+            "Direct $+6\\alpha\\hat{\\mathbf{w}}_s$: $1.808$ err ($\\Delta P_{\\text{new}}\\!\\approx\\!0$)",
+        ],
+        w=callout_width, dashed=True, line_h=0.42, pad=0.24, font_cmd="\\small",
+    )
 
-    def forward(self, tokens):
-        pos = torch.arange(tokens.shape[1], device=tokens.device).unsqueeze(0)
-        return self.W_E(tokens) + self.W_pos(pos)
+    stz.place_to_the_right_and_align_to_the_center(box_hook1, c_attn_hook, callout_gap)
+    stz.place_to_the_right_and_align_to_the_center(box_hook2, c_resid_hook, callout_gap)
+    stz.place_to_the_right_and_align_to_the_center(box_hook3, c_skip_hook, callout_gap)
 
+    connections = [
+        connect_straight_with_arrow(ier, cl),
+        connect_straight_with_arrow(cl, mmha_an),
+        connect_straight_with_arrow(mmha_an, c_attn_hook),
+        connect_straight_with_arrow(c_attn_hook, ff_an),
+        connect_straight_with_arrow(ff_an, c_resid_hook),
+        connect_straight_with_arrow(c_resid_hook, c_skip_hook),
+        connect_straight_with_arrow(c_skip_hook, linear),
+        connect_straight_with_arrow(linear, softmax),
+        connect_straight_horizontal(sl, cl),
+        res_mha,
+        res_ff,
+        connect_right_to_left_with_arrow(box_hook1, c_attn_hook, s_arr_dashed),
+        connect_right_to_left_with_arrow(box_hook2, c_resid_hook, s_arr_both),
+        connect_right_to_left_with_arrow(box_hook3, c_skip_hook, s_arr_dashed),
+    ]
 
-class CleanBlocks_L0_L1(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.proj = nn.Linear(512, 512)
+    tri_cs, translated_tri_cs = trident_coords(mmha_an)
+    e1 = stz.open_path([
+        translated_tri_cs[1],
+        stz.bottom_left_coords(translated_tri_cs[1], tri_cs[0]), tri_cs[0],
+    ], s_con)
+    e2 = stz.open_path([
+        translated_tri_cs[1],
+        stz.bottom_right_coords(translated_tri_cs[1], tri_cs[2]), tri_cs[2],
+    ], s_con)
+    connections.extend([e1, e2])
 
-    def forward(self, x):
-        return self.proj(x)
+    arrows = [arrow_in(ier), arrow_out(softmax)]
 
+    s_fmt_bottom = fmt.combine_tikz_strs(["align=center", "anchor=north"])
+    cs_in = stz.translate_coords_vertically(
+        stz.coords_from_bbox_with_fn(arrows[0], stz.bottom_center_coords),
+        -spacing_between_text_and_arrows,
+    )
+    a_in = stz.latex(cs_in, "Move Tokens $m_{1:T}$ \\\\ (\\texttt{C4} played at $t=9$)", s_fmt_bottom)
 
-class SteeredBlock_L2_to_L7(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.attn = CausalSelfAttn_LN1()
-        self.prior_hook = PriorHook_attn_out()
-        self.mlp = MLP_GeLU_LN2()
-        self.contrastive_hook = ContrastiveFlipHook_resid_post()
+    s_fmt_top = fmt.combine_tikz_strs(["align=center", "anchor=south"])
+    cs_out = stz.translate_coords_vertically(
+        stz.coords_from_bbox_with_fn(arrows[1], stz.top_center_coords),
+        spacing_between_text_and_arrows,
+    )
+    a_out = stz.latex(cs_out, "Legal Move \\\\ Probabilities $P(y\\mid\\mathbf{h}_8)$", s_fmt_top)
 
-    def forward(self, x):
-        a = self.prior_hook(self.attn(x))
-        x_mid = x + a
-        m = self.mlp(x_mid)
-        x_post = x_mid + m
-        return self.contrastive_hook(x_post)
+    cs_nx = stz.coords_from_bbox_with_fn(bb1, stz.left_center_coords)
+    a_nx = stz.latex(
+        [cs_nx[0] - 0.15, cs_nx[1]],
+        "$8\\times$ \\\\ {\\footnotesize($\\ell\\!\\in\\!\\{2..7\\}$} \\\\ {\\footnotesize steered)}",
+        fmt.combine_tikz_strs(["align=center", fmt.anchor("right_center")]),
+    )
 
+    s_fn = lambda side: fmt.combine_tikz_strs(["align=center", fmt.anchor(side + "_center")])
+    cs_pos = stz.coords_from_bbox_with_fn(sl, stz.left_center_coords)
+    a_pos = stz.latex([cs_pos[0] - 0.12, cs_pos[1]], "Positional \\\\ Encoding", s_fn("right"))
 
-class Unembed_LNFinal_WU(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.ln_final = LNPre_Final()
-        self.W_U = nn.Linear(512, 61, bias=False)
+    annotations = [a_in, a_out, a_nx, a_pos]
+    elements = [
+        bb1, ier, mmha_an, ff_an, linear, softmax,
+        cl, sl, c_attn_hook, c_resid_hook, c_skip_hook,
+        box_hook1, box_hook2, box_hook3,
+        connections, arrows, annotations,
+    ]
 
-    def forward(self, x):
-        return self.W_U(self.ln_final(x))
-
-
-class OthelloGPT_Intervened(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.embed = TokenPlusPosEmbed()
-        self.clean_L0_L1 = CleanBlocks_L0_L1()
-        self.steered_L2_L7 = SteeredBlock_L2_to_L7()
-        self.probe_readout = LinearProbe_Readout()
-        self.skip_subtract = SkipSubtract_MediatedOnly()
-        self.unembed_head = Unembed_LNFinal_WU()
-
-    def forward(self, tokens):
-        x = self.embed(tokens)
-        for _ in range(2):
-            x = self.clean_L0_L1(x)
-        for _ in range(6):
-            x = self.steered_L2_L7(x)
-        probe_logits = self.probe_readout(x)
-        x_med = self.skip_subtract(x)
-        move_logits = self.unembed_head(x_med)
-        return move_logits, probe_logits
+    tex_path = "/tmp/sane_tikz_othello_decoder.tex"
+    pdf_path = "/tmp/sane_tikz_othello_decoder.pdf"
+    stz.draw_to_tikz_standalone(elements, tex_path, name2color)
+    subprocess.run(
+        ["pdflatex", "-interaction=nonstopmode", "-output-directory=/tmp", tex_path],
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    subprocess.run(
+        ["gs", "-sDEVICE=pngalpha", "-r400", "-dBATCH", "-dNOPAUSE", f"-sOutputFile={out_png_path}", pdf_path],
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    return mpimg.imread(out_png_path)
 
 
 def rome_plot_trace_heatmap(ax, fig, differences: np.ndarray, row_labels: list[str] | None, col_labels: list[str], kind: str | None, title: str, xlabel: str, cbar_title: str, vmin: float | None = None, vmax: float | None = None):
@@ -526,9 +696,9 @@ def rome_plot_trace_heatmap(ax, fig, differences: np.ndarray, row_labels: list[s
 def generate_transformer_intervention_figure(sd, probes, dataset):
     """
     Generates `fig_transformer_intervention.pdf` and `fig_transformer_intervention.png` using:
-      (a) `torchview.draw_graph` (`mert-kurttutan/torchview`) + Graphviz (`dot`) to automatically
-          trace and render the computation graph of `OthelloGPT_Intervened` on Case #101 (`(1, 17)` tokens).
-      (b-d) `kmeng01/rome/experiments/causal_trace.py:plot_trace_heatmap` (Meng et al., NeurIPS 2022)
+      (a) `negrinho/sane_tikz` (`examples/transformer.py`) to render the canonical Vaswani et al. (2017)
+          Decoder-Only Transformer block diagram with our 3 intervention hooks.
+      (b-e) `kmeng01/rome/experiments/causal_trace.py:plot_trace_heatmap` (Meng et al., NeurIPS 2022)
           and `Othello_GPT_Circuits.ipynb` (Nanda 2023) to plot real causal traces across
           Residual State (`Purples`), MLP (`Greens`), and Attention (`Reds`).
     """
@@ -540,20 +710,9 @@ def generate_transformer_intervention_figure(sd, probes, dataset):
     move_idx = len(hist)
     toks = torch.tensor([[STOI[m] for m in hist]], dtype=torch.long)
 
-    # 1. Trace PyTorch execution graph automatically using `torchview.draw_graph` + Graphviz `dot`
-    tv_model = OthelloGPT_Intervened()
-    tv_graph = draw_graph(
-        tv_model,
-        input_data=toks,
-        depth=2,
-        expand_nested=True,
-        roll=True,
-        graph_dir="LR",
-    )
-    tv_graph.visual_graph.attr(dpi="300")
-    tv_png_base = os.path.join(BASE_DIR, "torchview_computation_graph")
-    tv_graph.visual_graph.render(tv_png_base, format="png", cleanup=True)
-    tv_img = mpimg.imread(tv_png_base + ".png")
+    # 1. Render Vaswani et al. / `sane_tikz` Transformer diagram
+    sane_png_path = "/tmp/sane_tikz_othello_decoder.png"
+    stz_img = render_sane_tikz_transformer_diagram(sane_png_path)
 
     # 2. Compute real ROME Causal Traces (`resid_post`, `mlp_out`, `attn_out`) on Case #101
     _, _, kv_cache = forward_full_sequence(toks, sd)
@@ -564,45 +723,34 @@ def generate_transformer_intervention_figure(sd, probes, dataset):
     v_pre = set(ab.get_valid_moves())
     ab.state[r, c] = (2 - s["ori_color"]) - 1
     v_post = set(ab.get_valid_moves())
-    gained = sorted(v_post - v_pre)  # B5 (9? wait: B5=12, C5=20), let's use exact board indices
+    gained = sorted(v_post - v_pre)
 
     d_add = [get_probe_direction(probes, l, r, c, s["ori_color"], move_idx, contrastive=False) for l in range(8)]
     d_diff = [get_probe_direction(probes, l, r, c, s["ori_color"], move_idx, contrastive=True) for l in range(8)]
 
-    # Trace (b): State intervention trace (`Purples`) across layers l=0..7
-    # Rows:
-    # 0: Single-Layer Edit (l only) -> P(B5, C5)
-    # 1: Span [l..7] @ attn_out (Nanda) -> P(B5, C5)
-    # 2: Span [l..7] @ resid_post (Contrastive) -> P(B5, C5)
-    # 3: Mediated-Only [l..7] (-Skip Sub.) -> P(B5, C5)
-    # 4: Probe P(C4=Black 'X') after Single-L4 Edit -> shows self-repair across l=0..7!
     state_trace = np.zeros((5, 8))
     _, _, post_l4 = trace_hidden_states_last_token(
         last_emb, sd, kv_cache, resid_deltas={4: (2.3 * d_diff[4]).unsqueeze(0)}
     )
     for l in range(8):
-        # Row 0: Single-layer edit at layer l
         log_single, _, _ = trace_hidden_states_last_token(
             last_emb, sd, kv_cache, resid_deltas={l: (2.3 * d_diff[l]).unsqueeze(0)}
         )
         bp_single = logits_to_board_probs(log_single)
         state_trace[0, l] = sum(bp_single[m].item() for m in gained)
 
-        # Row 1: Cumulative span [l..7] @ attn_out (Nanda hook)
         log_span_attn, _, _ = trace_hidden_states_last_token(
             last_emb, sd, kv_cache, attn_deltas={k: (2.3 * d_add[5]).unsqueeze(0) for k in range(l, 8)}
         )
         bp_span_attn = logits_to_board_probs(log_span_attn)
         state_trace[1, l] = sum(bp_span_attn[m].item() for m in gained)
 
-        # Row 2: Cumulative span [l..7] @ resid_post (Contrastive Flip)
         log_span_res, _, _ = trace_hidden_states_last_token(
             last_emb, sd, kv_cache, resid_deltas={k: (2.3 * d_diff[k]).unsqueeze(0) for k in range(l, 8)}
         )
         bp_span_res = logits_to_board_probs(log_span_res)
         state_trace[2, l] = sum(bp_span_res[m].item() for m in gained)
 
-        # Row 3: Mediated-Only span [l..7] (Skip Subtracted -(8-l)*delta before W_U)
         n_span = 8 - l
         log_span_med, _, _ = trace_hidden_states_last_token(
             last_emb,
@@ -614,21 +762,14 @@ def generate_transformer_intervention_figure(sd, probes, dataset):
         bp_span_med = logits_to_board_probs(log_span_med)
         state_trace[3, l] = sum(bp_span_med[m].item() for m in gained)
 
-        # Row 4: Probe P(C4 = Black 'X') scaled to [0, 0.20] for unified Purples scale or actual probability:
-        # Let's record counterfactual restoration score in [0, 1] across all 5 rows!
-        # Wait: normalizing P(B5, C5) by its clean uniform legal share (2 / 9 = 0.222) gives Restoration Score in [0, 1]!
-    target_share = len(gained) / float(len(v_post))  # 2 / 9 = 0.2222
+    target_share = len(gained) / float(len(v_post))
     state_trace[:4, :] = np.clip(state_trace[:4, :] / target_share, 0.0, 1.0)
     for l in range(8):
         p_logits = torch.einsum("d,drck->rck", post_l4[l][0], probes[l][0])[r, c]
         p_probs = torch.softmax(p_logits, dim=-1)
-        # move_idx=17 (odd -> 1=Black 'X', 2=White 'O')
         black_cls = 2 if (move_idx % 2 == 0) else 1
         state_trace[4, l] = p_probs[black_cls].item()
 
-    # Trace (c) & (d): Component-level MLP (`Greens`) and Attention (`Reds`) causal traces
-    # Following `Othello_GPT_Circuits.ipynb` (Cells 82 & 107) and `kmeng01/rome` (`kind='mlp'`, `kind='attn'`):
-    # Record clean vs steered per-layer attn_out and mlp_out vectors
     def get_layer_attn_mlp_outputs(resid_deltas=None):
         x = last_emb.clone()
         attn_outs, mlp_outs = [], []
@@ -656,16 +797,10 @@ def generate_transformer_intervention_figure(sd, probes, dataset):
     steered_attn, steered_mlp = get_layer_attn_mlp_outputs({l: (2.3 * d_diff[l]).unsqueeze(0) for l in range(2, 8)})
     single_l4_attn, single_l4_mlp = get_layer_attn_mlp_outputs({4: (2.3 * d_diff[4]).unsqueeze(0)})
 
-    # Direct Logit Attribution of (steered - clean) MLP and Attention outputs onto:
-    # Row 0: Newly legal move B5
-    # Row 1: Newly legal move C5
-    # Row 2: Invalidated move F7 (negated so positive = suppressing illegal move F7)
-    # Row 3: Net Flanking Preference (B5 + C5 - F7)
-    # Row 4: Self-Repair Opposition on Tile C4 after Single-L4 Edit: -(out_singleL4 - out_clean) . d_diff[l]
     b5_tok = STOI[permit("b5")]
     c5_tok = STOI[permit("c5")]
     f7_tok = STOI[permit("f7")]
-    w_u = sd["unembed.W_U"]  # (512, 61)
+    w_u = sd["unembed.W_U"]
 
     mlp_trace = np.zeros((5, 8))
     attn_trace = np.zeros((5, 8))
@@ -679,7 +814,6 @@ def generate_transformer_intervention_figure(sd, probes, dataset):
         mlp_trace[1, l] = (dm @ w_u[:, c5_tok]).item()
         mlp_trace[2, l] = -(dm @ w_u[:, f7_tok]).item()
         mlp_trace[3, l] = mlp_trace[0, l] + mlp_trace[1, l] + mlp_trace[2, l]
-        # Self-repair pull back toward White ('O') on C4 in probe logit units after single-L4 edit
         w_repair_c4 = probes[l][0, :, r, c, white_cls] - probes[l][0, :, r, c, black_cls]
         dm_l4 = single_l4_mlp[l] - clean_mlp[l]
         mlp_trace[4, l] = max(0.0, (dm_l4 @ w_repair_c4).item())
@@ -691,18 +825,20 @@ def generate_transformer_intervention_figure(sd, probes, dataset):
         da_l4 = single_l4_attn[l] - clean_attn[l]
         attn_trace[4, l] = max(0.0, (da_l4 @ w_repair_c4).item())
 
-    # Assemble Figure 1: Top row = `torchview` Computation Graph; Bottom row = 3 ROME `plot_trace_heatmap` panels
-    fig = plt.figure(figsize=(13.6, 4.45))
-    gs = fig.add_gridspec(2, 3, height_ratios=[0.62, 1.0], hspace=0.22, wspace=0.38)
+    # Assemble Figure 1:
+    # Left column (full height, gs[:, 0]): `sane_tikz` Vaswani et al. (2017) Decoder-Only Transformer Diagram
+    # Right 2x2 grid (gs[0, 1], gs[0, 2], gs[1, 1], gs[1, 2]): ROME `plot_trace_heatmap` & Mediation Profile
+    fig = plt.figure(figsize=(13.8, 5.65))
+    gs = fig.add_gridspec(2, 3, width_ratios=[1.22, 1.0, 1.0], hspace=0.42, wspace=0.40)
 
-    ax_top = fig.add_subplot(gs[0, :])
-    ax_top.imshow(tv_img)
-    ax_top.axis("off")
-    ax_top.set_title(
-        "(a) PyTorch Computation Graph of Intervened Othello-GPT (Automatically Traced & Rolled via torchview.draw_graph + Graphviz dot, Input: Case #101, T=17)",
-        fontsize=9.2,
+    ax_a = fig.add_subplot(gs[:, 0])
+    ax_a.imshow(stz_img)
+    ax_a.axis("off")
+    ax_a.set_title(
+        "(a) Intervened Othello-GPT Decoder\n(Rendered via negrinho/sane_tikz)",
+        fontsize=9.3,
         fontweight="bold",
-        pad=3,
+        pad=6,
     )
 
     layer_cols = [f"L{l}" for l in range(8)]
@@ -721,7 +857,7 @@ def generate_transformer_intervention_figure(sd, probes, dataset):
         "L4 Self-Repair Pull (C4)",
     ]
 
-    ax_b = fig.add_subplot(gs[1, 0])
+    ax_b = fig.add_subplot(gs[0, 1])
     rome_plot_trace_heatmap(
         ax_b,
         fig,
@@ -736,7 +872,7 @@ def generate_transformer_intervention_figure(sd, probes, dataset):
         vmax=1.0,
     )
 
-    ax_c = fig.add_subplot(gs[1, 1])
+    ax_c = fig.add_subplot(gs[0, 2])
     rome_plot_trace_heatmap(
         ax_c,
         fig,
@@ -751,12 +887,12 @@ def generate_transformer_intervention_figure(sd, probes, dataset):
         vmax=float(np.max(mlp_trace)),
     )
 
-    ax_d = fig.add_subplot(gs[1, 2])
+    ax_d = fig.add_subplot(gs[1, 1])
     rome_plot_trace_heatmap(
         ax_d,
         fig,
         attn_trace,
-        row_labels=None,
+        row_labels=comp_rows,
         col_labels=layer_cols,
         kind="attn",
         title="(d) ROME Attn Trace & Self-Repair (ΔAttn_l)",
@@ -766,7 +902,29 @@ def generate_transformer_intervention_figure(sd, probes, dataset):
         vmax=max(float(np.max(attn_trace)), 1.0),
     )
 
-    fig.subplots_adjust(left=0.02, right=0.98, top=0.93, bottom=0.09)
+    # Panel (e): ROME Fig. 7c style Layer-wise Causal Effect & Module Mediation Bar Plot (normalized [0, 1])
+    ax_e = fig.add_subplot(gs[1, 2])
+    x_idx = np.arange(8)
+    w_bar = 0.26
+    state_eff_norm = state_trace[2, :] / max(1e-6, float(np.max(state_trace[2, :])))
+    mlp_flank_norm = np.maximum(0.0, mlp_trace[3, :]) / max(1e-6, float(np.max(mlp_trace[3, :])))
+    repair_tot = mlp_trace[4, :] + attn_trace[4, :]
+    repair_norm = repair_tot / max(1e-6, float(np.max(repair_tot)))
+    ax_e.bar(x_idx - w_bar, state_eff_norm, width=w_bar, color="#6b46c1", label="Span [l..7] State Restoration")
+    ax_e.bar(x_idx, mlp_flank_norm, width=w_bar, color="#15803d", label="MLP Flanking Gain (ΔMLP_l)")
+    ax_e.bar(x_idx + w_bar, repair_norm, width=w_bar, color="#dc2626", label="L4 Self-Repair Pull (MLP+Attn)")
+    ax_e.set_xticks(x_idx)
+    ax_e.set_xticklabels(layer_cols, fontsize=8.0)
+    ax_e.set_ylim(0.0, 1.15)
+    ax_e.set_xlabel("Transformer Layer l", fontsize=8.0)
+    ax_e.set_ylabel("Normalized Causal Effect", fontsize=8.0)
+    ax_e.set_title("(e) Layer-Wise Module Mediation (ROME Fig. 7c)", fontsize=8.8, fontweight="bold", pad=5)
+    ax_e.legend(loc="upper left", fontsize=6.7, frameon=True, facecolor="white", framealpha=0.9)
+    ax_e.grid(axis="y", linestyle=":", alpha=0.5)
+    ax_e.spines["top"].set_visible(False)
+    ax_e.spines["right"].set_visible(False)
+
+    fig.subplots_adjust(left=0.01, right=0.98, top=0.92, bottom=0.08)
     for ext in ["pdf", "png"]:
         out_path = os.path.join(BASE_DIR, f"fig_transformer_intervention.{ext}")
         fig.savefig(out_path, dpi=300, bbox_inches="tight")

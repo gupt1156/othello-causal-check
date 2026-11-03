@@ -39,7 +39,7 @@ This matters for world models now because linear probe $R^2$ and activation stee
 
 ## 3. First Experiment and Results
 
-### Figure 1: PyTorch Computation Graph & ROME Causal Traces (`torchview.draw_graph` + `kmeng01/rome:plot_trace_heatmap`)
+### Figure 1: Transformer Intervention Architecture & ROME Causal Traces (`negrinho/sane_tikz` + `kmeng01/rome:plot_trace_heatmap`)
 ![Transformer Intervention Architecture](fig_transformer_intervention.png)
 
 ### Figure 2: Board-Level Causal Visualization on Canonical Case #101 (`othello_world` `plot_probs` & `plot_mentals`)
@@ -108,7 +108,7 @@ In my current research at the **CausalML Lab** (modeling multi-agent failures as
 #    across N = 1,001 boards, writing results.json & fig_causal_check.png
 python run_experiment.py
 
-# 2. Generate Figure 1 (via torchview.draw_graph + Graphviz dot & kmeng01/rome:plot_trace_heatmap)
+# 2. Generate Figure 1 (via negrinho/sane_tikz & kmeng01/rome:plot_trace_heatmap)
 #    and Figure 2 (via likenneth/othello_world: plot_probs, plot_mentals, OthelloBoardState)
 python generate_paper_visuals.py
 
@@ -116,4 +116,4 @@ python generate_paper_visuals.py
 pdflatex report.tex && pdflatex report.tex
 ```
 
-*AI tools disclosure:* AI coding assistants (Antigravity / Gemini) were used to scaffold the pure-PyTorch `LNPre` forward-pass runner, KV-cached batching, and integration with `torchview`, `kmeng01/rome`, and `likenneth/othello_world`; all experimental design decisions, control formulations, codebase audits of `ajyl/mech_int_othelloGPT`, and interpretations were verified directly against the executed benchmark outputs.
+*AI tools disclosure:* AI coding assistants (Antigravity / Gemini) were used to scaffold the pure-PyTorch `LNPre` forward-pass runner, KV-cached batching, and integration with `negrinho/sane_tikz`, `kmeng01/rome`, and `likenneth/othello_world`; all experimental design decisions, control formulations, codebase audits of `ajyl/mech_int_othelloGPT`, and interpretations were verified directly against the executed benchmark outputs.

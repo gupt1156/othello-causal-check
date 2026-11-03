@@ -31,7 +31,7 @@
 \setlength{\dbltextfloatsep}{4pt plus 1pt minus 1pt}
 \setlength{\textfloatsep}{4pt plus 1pt minus 1pt}
 \setlength{\intextsep}{4pt plus 1pt minus 1pt}
-\setlength\titlebox{3.15cm}
+\setlength\titlebox{2.95cm}
 
 \title{Causal Check on Othello-GPT: Separating Downstream World-Model\\Computation from Direct Readout Bias}
 
@@ -49,9 +49,9 @@ Linear probes and activation steering are standard tools for certifying that seq
 
 \begin{figure*}[t!]
   \centering
-  \includegraphics[width=0.95\textwidth]{fig_transformer_intervention.pdf}
+  \includegraphics[width=0.82\textwidth]{fig_transformer_intervention.pdf}
   \caption{\label{fig:transformer_intervention}
-  \textbf{Transformer intervention architecture and component-level causal traces on Case \#101 ($T{=}17$, flipping \texttt{C4}), generated using \texttt{torchview} (\texttt{draw\_graph} + Graphviz \texttt{dot}) and ROME's \texttt{plot\_trace\_heatmap} \citep{meng2022locating, nanda2023emergent}.} \textbf{(a)} Rolled PyTorch computation graph of \texttt{OthelloGPT\_Intervened} traced automatically via \texttt{torchview.draw\_graph} (\texttt{roll=True, expand\_nested=True}), showing \texttt{CleanBlocks\_L0\_L1} ($\times 2$), \texttt{SteeredBlock\_L2\_to\_L7} ($\times 6$, comparing \texttt{PriorHook\_attn\_out} vs.\ \texttt{ContrastiveFlipHook\_resid\_post} across residual \texttt{add} nodes), \texttt{LinearProbe\_Readout}, and \texttt{SkipSubtract\_MediatedOnly} before \texttt{Unembed\_LNFinal\_WU}. \textbf{(b--d)} Real activation/intervention traces plotted with ROME's \texttt{plot\_trace\_heatmap} (\texttt{Purples} = state, \texttt{Greens} = MLP, \texttt{Reds} = Attn): \textbf{(b)} single-layer edits score $0.00$ across all layers (as \texttt{C4} flips to $0.91$ at \texttt{L4} then self-repairs to $0.02$ at \texttt{L5}), whereas spans starting at \texttt{L2--L3} and \texttt{Mediated-Only} recover newly legal moves; \textbf{(c)} $\Delta\text{MLP}_5$ ($+4.62$) and $\Delta\text{MLP}_6$ ($+27.09$ logit gain) drive flanking recomputation on \texttt{B5, C5, F7} while opposing single-layer \texttt{L4} edits ($+2.24$ self-repair pull); \textbf{(d)} $\Delta\text{Attn}_7$ ($+5.63$) consolidates the final move readout.}
+  \textbf{Transformer intervention architecture and component-level causal traces on Case \#101 ($T{=}17$, flipping \texttt{C4}), generated using \texttt{negrinho/sane\_tikz} (\texttt{examples/transformer.py}) and ROME's \texttt{plot\_trace\_heatmap} \citep{meng2022locating, nanda2023emergent}.} \textbf{(a)} Decoder-only \texttt{Othello-GPT} architecture diagram rendered via \texttt{sane\_tikz} ($8\times$ blocks, $\ell \in \{2..7\}$ steered), showing our three intervention sites along the residual stream: (1) prior hook at \texttt{attn\_out} ($0.102$ err), (2) linear probe readout $W_\ell$ and contrastive flip at \texttt{resid\_post} ($\mathbf{0.012}$ err, $8.5\times \downarrow$), and (3) skip-connection decomposition at $\mathbf{h}_8$ before $\text{Linear}\ (W_U)$ (\texttt{Mediated-Only} $\mathbf{0.158}$ err vs.\ \texttt{Direct Bypass} $1.808$ err). \textbf{(b--d)} Real activation/intervention traces plotted with ROME's \texttt{plot\_trace\_heatmap} (\texttt{Purples} = state, \texttt{Greens} = MLP, \texttt{Reds} = Attn), and \textbf{(e)} ROME Figure~7c layer-wise module mediation profile across layers $\ell \in \{0..7\}$.}
 \end{figure*}
 
 \section{The Question and Why It Matters Now}
@@ -117,7 +117,7 @@ Complete causal decomposition and codebase audit on the official $1{,}001$-board
 
 \begin{figure*}[t!]
   \centering
-  \includegraphics[width=0.78\textwidth]{fig_causal_check.png}
+  \includegraphics[width=0.74\textwidth]{fig_causal_check.png}
   \caption{\label{fig:causal_check}
   \textbf{Quantitative evaluation across all $N = 1{,}001$ counterfactual benchmark boards (shaded bands: 95\% bootstrap CIs).} \textbf{Left (A):} Counterfactual move error across scale $\alpha$. Subtracting the direct skip connection (\texttt{Mediated-Only}, blue) retains $97.9\%$ of the error reduction, while applying the vector only before $W_U$ (\texttt{Direct-Logit Bypass}, red) fails to discover newly legal moves. Aligning the hook site to \texttt{resid\_post} with a contrastive flip vector ($\star$, green) cuts error from $0.102$ to $0.012$. \textbf{Right (B):} Layer-wise 3-way probe accuracy (green/gray, right axis) vs.\ single-layer edit error (red) and cumulative span $[\ell..7]$ error (blue).}
 \end{figure*}
@@ -162,7 +162,7 @@ Inspecting \texttt{mech\_int/intervene.py} (lines 140--162) in \citet{nanda2023e
 I want to work on \textbf{Evaluating World Models Under Intervention}---specifically claiming and building \href{https://github.com/physicalreasoning/forward/issues/5}{\textbf{\texttt{physicalreasoning/forward} Issue \#5 (\emph{``Design an intervention test for world models''})}}, paired with the untrained-encoder diagnostic philosophy from \href{https://github.com/physicalreasoning/causal-jepa}{\texttt{causal-jepa}}. In my research at the \textbf{CausalML Lab} (modeling multi-agent failures as soft interventions on Structural Causal Models) and on \textbf{hierarchical traffic scene synthesis}, models with nearly identical observational rollout loss routinely diverge under counterfactual interventions. Concretely, I want to build a deterministic 2D rigid-body and multi-agent traffic counterfactual suite for \texttt{forward} where two world models trained to matched observational validation loss are reset to held-out states, subjected to unshown impulse or mass perturbations, and gated on their \textbf{counterfactual consistency gap} alongside mediated-vs-direct and untrained-encoder controls.
 
 \vspace{3pt}
-\noindent{\footnotesize \textbf{Reproducibility \& AI Disclosure:} Standalone code (\texttt{run\_experiment.py}, \texttt{generate\_paper\_visuals.py}, \texttt{othello\_rules.py}) and bootstrap metrics (\texttt{results.json}) reproduce all tables and figures using \texttt{torchview}, \texttt{kmeng01/rome}, and \texttt{likenneth/othello\_world}. AI coding assistants (Antigravity / Gemini) were used to scaffold the KV-cached forward pass and tool integration; all experimental designs, controls, codebase audits, and interpretations were verified directly against executed benchmark outputs.}
+\noindent{\footnotesize \textbf{Reproducibility \& AI Disclosure:} Standalone code (\texttt{run\_experiment.py}, \texttt{generate\_paper\_visuals.py}, \texttt{othello\_rules.py}) and bootstrap metrics (\texttt{results.json}) reproduce all tables and figures using \texttt{negrinho/sane\_tikz}, \texttt{kmeng01/rome}, and \texttt{likenneth/othello\_world}. AI coding assistants (Antigravity / Gemini) were used to scaffold the KV-cached forward pass and tool integration; all experimental designs, controls, codebase audits, and interpretations were verified directly against executed benchmark outputs.}
 
 {\footnotesize
 \setlength{\bibsep}{1.2pt}
