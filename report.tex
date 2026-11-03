@@ -1,51 +1,99 @@
 \pdfoutput=1
-\documentclass[9pt]{extarticle}
+\documentclass{article}
 
-\usepackage[letterpaper, top=0.42in, bottom=0.42in, left=0.55in, right=0.55in]{geometry}
-\usepackage{times}
-\usepackage{latexsym}
-\usepackage[T1]{fontenc}
+\usepackage[preprint,nonatbib]{neurips_2024}
+
 \usepackage[utf8]{inputenc}
-\usepackage{microtype}
-\usepackage{inconsolata}
-\usepackage{amsmath,amssymb}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
 \usepackage{booktabs}
-\usepackage{tabularx}
-\usepackage{graphicx}
+\usepackage{amsfonts}
+\usepackage{amsmath,amssymb}
+\usepackage{nicefrac}
+\usepackage{microtype}
 \usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{tabularx}
 \usepackage{enumitem}
 \usepackage{caption}
-\usepackage[colorlinks=true, linkcolor=blue!60!black, citecolor=blue!60!black, urlcolor=blue!60!black]{hyperref}
-\usepackage{titlesec}
 
-\setlength{\parindent}{0pt}
-\setlength{\parskip}{2.5pt}
-\setlist[itemize]{leftmargin=1.2em, itemsep=1pt, topsep=1.5pt, parsep=0pt}
-\setlist[enumerate]{leftmargin=1.3em, itemsep=1pt, topsep=1.5pt, parsep=0pt}
-\captionsetup{font=scriptsize, labelfont=bf, skip=2pt}
+\hypersetup{colorlinks=true, linkcolor=blue!60!black, citecolor=blue!60!black, urlcolor=blue!60!black}
 
-\titlespacing*{\section}{0pt}{4.5pt}{1.5pt}
-\titleformat{\section}{\normalfont\normalsize\bfseries}{\thesection.}{0.4em}{}
+% Tighten vertical spacing slightly so all 3 figures + Table 1 fit cleanly within 2 pages
+\AtBeginDocument{
+  \newgeometry{
+    textheight=9.85in,
+    textwidth=6.75in,
+    top=0.52in,
+    headheight=10pt,
+    headsep=12pt,
+    footskip=18pt
+  }
+}
+\makeatletter
+\renewcommand{\normalsize}{%
+  \@setfontsize\normalsize{9.2pt}{10.4pt}
+  \abovedisplayskip      5\p@ \@plus 2\p@ \@minus 4\p@
+  \abovedisplayshortskip \z@ \@plus 2\p@
+  \belowdisplayskip      \abovedisplayskip
+  \belowdisplayshortskip 3\p@ \@plus 2\p@ \@minus 2\p@
+}
+\normalsize
+\renewcommand{\@notice}{}
+\renewcommand{\@toptitlebar}{
+  \hrule height 4\p@
+  \vskip 0.09in
+  \vskip -\parskip%
+}
+\renewcommand{\@bottomtitlebar}{
+  \vskip 0.11in
+  \vskip -\parskip
+  \hrule height 1\p@
+  \vskip 0.04in%
+}
+\renewcommand{\@maketitle}{%
+  \vbox{%
+    \hsize\textwidth
+    \linewidth\hsize
+    \vskip 0.01in
+    \@toptitlebar
+    \centering
+    {\large\bf \@title\par}
+    \@bottomtitlebar
+    \begin{tabular}[t]{c}\bf\rule{\z@}{11\p@}\@author\end{tabular}%
+    \vskip 0.05in \@minus 0.02in
+  }
+}
+\renewcommand{\section}{%
+  \@startsection{section}{1}{\z@}%
+                {-1.1ex \@plus -0.3ex \@minus -0.2ex}%
+                { 0.5ex \@plus  0.2ex \@minus  0.1ex}%
+                {\normalsize\bf\raggedright}%
+}
+\makeatother
 
+\setlength{\parskip}{2pt}
+\setlist[itemize]{leftmargin=1.3em, itemsep=1pt, topsep=1pt, parsep=0pt}
+\setlist[enumerate]{leftmargin=1.4em, itemsep=1pt, topsep=1pt, parsep=0pt}
+\captionsetup{font=scriptsize, labelfont=bf, skip=1.5pt}
 \renewcommand{\topfraction}{0.95}
 \renewcommand{\bottomfraction}{0.95}
 \renewcommand{\textfraction}{0.05}
 \renewcommand{\floatpagefraction}{0.90}
-\setlength{\textfloatsep}{4pt plus 1pt minus 1pt}
-\setlength{\floatsep}{4pt plus 1pt minus 1pt}
-\setlength{\intextsep}{4pt plus 1pt minus 1pt}
+\setlength{\textfloatsep}{3pt plus 1pt minus 1pt}
+\setlength{\floatsep}{3pt plus 1pt minus 1pt}
+\setlength{\intextsep}{3pt plus 1pt minus 1pt}
 
-\pagestyle{plain}
+\title{Causal Check on Othello-GPT: Separating Downstream World-Model Computation from Direct Readout Bias}
+
+\author{%
+  Rohan Gupta \quad \normalfont Purdue University \quad \texttt{gupt1156@purdue.edu}
+}
 
 \begin{document}
 
-\begin{center}
-  {\large \textbf{Causal Check on Othello-GPT: Separating Downstream World-Model Computation from Direct Readout Bias}}\\[2pt]
-  {\small \textbf{Rohan Gupta} (\texttt{gupt1156@purdue.edu})}
-\end{center}
-\vspace{-5pt}
-\hrule height 0.6pt
-\vspace{3pt}
+\maketitle
 
 \section{Question, Experimental Setup, and Controls}
 
@@ -59,16 +107,18 @@ In 8-layer \texttt{Othello-GPT} ($d_{\text{model}}=512$, \texttt{LNPre}), linear
 
 \begin{figure}[h!]
   \centering
-  \includegraphics[width=0.93\textwidth]{fig_transformer_intervention.pdf}
+  \includegraphics[width=0.84\textwidth]{fig_transformer_intervention.pdf}
   \caption{\label{fig:transformer_intervention}
   \textbf{Transformer intervention architecture and ROME causal traces on Case \#101 ($T{=}17$, flipping \texttt{C4} from White $\bigcirc$ to Black $\bullet$).} \textbf{(a)} Decoder-only \texttt{Othello-GPT} diagram rendered via \texttt{negrinho/sane\_tikz} (\texttt{examples/transformer.py}), illustrating the three intervention sites along the residual stream: (1) prior hook at \texttt{attn\_out} ($0.102$ err), (2) linear probe $W_\ell$ and contrastive flip at \texttt{resid\_post} ($\mathbf{0.012}$ err, $8.5\times \downarrow$), and (3) skip-connection decomposition at $\mathbf{h}_8$ before $\text{Linear}\ (W_U)$ (\texttt{Mediated-Only} $\mathbf{0.158}$ err vs.\ \texttt{Direct Bypass} $1.808$ err). \textbf{(b--d)} Component-level traces rendered via \texttt{kmeng01/rome}'s \texttt{plot\_trace\_heatmap} (\texttt{Purples} = state, \texttt{Greens} = $\Delta\text{MLP}_\ell$, \texttt{Reds} = $\Delta\text{Attn}_\ell$), and \textbf{(e)} ROME Figure~7c layer-wise module mediation profile.}
 \end{figure}
 
 \begin{table}[h!]
+\caption{\label{tab:main_results}
+Causal path decomposition and codebase audit on the official $1{,}001$-board \texttt{Othello-GPT} intervention benchmark.}
 \centering
 \scriptsize
-\setlength{\tabcolsep}{4.5pt}
-\renewcommand{\arraystretch}{1.04}
+\setlength{\tabcolsep}{4.0pt}
+\renewcommand{\arraystretch}{1.02}
 \begin{tabularx}{\textwidth}{@{}l cc X@{}}
 \toprule
 \textbf{Experimental Arm ($N = 1{,}001$ counterfactual boards, $\alpha = 2.3$)} & \textbf{Error on $B'$ $\downarrow$ (95\% CI)} & \textbf{$\Delta P_{\text{new}}$ $\uparrow$ (95\% CI)} & \textbf{Mechanistic Role / Key Finding} \\
@@ -85,20 +135,18 @@ In 8-layer \texttt{Othello-GPT} ($d_{\text{model}}=512$, \texttt{LNPre}), linear
 8. \textbf{Code Audit C: Contrastive Flip $\hat{\mathbf{d}}_s^\ell$ @ \texttt{hook\_resid\_post}} & $\mathbf{0.012}\ [0.004, 0.026]$ & $\mathbf{+0.079}\ [+0.073, +0.085]$ & \textbf{$8.5\times$ error reduction ($12$ total errors / $1{,}001$ boards)} \\
 \bottomrule
 \end{tabularx}
-\caption{\label{tab:main_results}
-Causal path decomposition and codebase audit on the official $1{,}001$-board \texttt{Othello-GPT} intervention benchmark.}
 \end{table}
 
 \begin{figure}[t!]
   \centering
-  \includegraphics[width=0.86\textwidth]{fig_board_intervention.pdf}
+  \includegraphics[width=0.76\textwidth]{fig_board_intervention.pdf}
   \caption{\label{fig:board_intervention}
   \textbf{Board-level causal visualization on Case \#101 ($T{=}17$, flipping \texttt{C4}: $\bigcirc \to \bullet$), rendered via \texttt{likenneth/othello\_world} (\texttt{plot\_probs}, \texttt{plot\_mentals}, \texttt{OthelloBoardState}).} \textbf{Top (a--e):} Physical transition $B \to B'$ (newly legal moves \texttt{B5, C5} in green; invalidated move \texttt{F7} in red) and $8 \times 8$ move probability heatmaps. \texttt{Direct Bypass Only} (c) assigns $0.00$ to \texttt{B5, C5} ($4$ errors), whereas \texttt{Mediated-Only} (d) and \texttt{Contrastive Flip} (e) suppress \texttt{F7} ($0.12 \to 0.00$) and activate \texttt{B5, C5} with \textbf{0 errors}. \textbf{Bottom (f--j):} Layer-wise probe beliefs (\texttt{O} = White, \texttt{X} = Black). A single-layer edit at $L_4$ flips \texttt{C4} to \texttt{X} (f), but $L_5$ and $L_7$ self-repair \texttt{C4} back to \texttt{O} (g--h, red box); steering $L_{2..7}$ sustains \texttt{X} through $L_7$ (i--j, green box).}
 \end{figure}
 
 \begin{figure}[t!]
   \centering
-  \includegraphics[width=0.80\textwidth]{fig_causal_check.png}
+  \includegraphics[width=0.68\textwidth]{fig_causal_check.png}
   \caption{\label{fig:causal_check}
   \textbf{Aggregate results across all $N = 1{,}001$ benchmark boards (95\% bootstrap CIs).} \textbf{Left (A):} Counterfactual move error vs.\ scale $\alpha$. \texttt{Mediated-Only} (blue) retains $97.9\%$ of the error reduction, while \texttt{Direct-Logit Bypass} (red) fails to discover newly legal moves. Contrastive steering at \texttt{resid\_post} ($\star$, green) cuts error from $0.102$ to $0.012$. \textbf{Right (B):} Layer-wise 3-way probe accuracy (green/gray, right axis) vs.\ single-layer edit error (red) and cumulative span $[\ell..7]$ error (blue).}
 \end{figure}
